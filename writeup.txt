@@ -1,0 +1,100 @@
+Bryan Valarezo
+110362410
+
+This is a write up reverse engineering the 2 binaries
+-Number
+-Key
+
+## Number
+
+After downloading the binary, I ran `file(1)` on it to get relevant information.
+
+$ file ./number
+
+> ./number: ELF 32-bit LSB shared object, Intel 80386, version 1 (SYSV), dynamically linked, interpreter /lib/ld-linux.so.2, BuildID[sha1]=f8ca93addd368c65d626901f74c3c9eb79b8ec1a, stripped
+
+What is important to note is that the binary is
+-stripped
+-32-bit Intel x86
+-linked with a shared object
+
+Running `ldd(1)` reveals that the shared object is libc
+$ldd ./number
+
+> linux-gate.so.1 (0xb7f1b000)
+libc.so.6 => /lib/i386-linux-gnu/libc.so.6 (0xb7d21000)
+/lib/ld-linux.so.2 (0xb7f1c000)
+
+Nothing quite interesting yet, I then ran `strings(1)` to find any interesting data in the binary.
+
+$ strings ./number
+
+This reveals some information.
+
+libc functions...
+fflush
+exit
+__isoc99_scanf
+puts
+stdin
+printf
+strlen
+memset
+atoi
+strcmp
+
+and some custom strings too...
+Wrong number
+Enter the right number:
+%27s
+CSE363ESC
+Your number corresponds to %s, well done!    
+
+If we run the binary normally...we can see some of these strings in action.
+
+$ ./number 
+Enter the right number: 12
+Wrong number
+
+I can run the binary with `strace(1)` and `ltrace(1)` to see which of the libc functions and syscalls were being called.
+
+$ strace ./number
+$ ltrace ./number
+
+So far, I can guess that the program uses `scanf(3)` to read the number from STDIN. Then at the end, print the result of the comparasion via `printf(3)`. However, it isn't clear how the comparasion is done.
+
+Lets actually look into the binary itself, with `objdump(1)`.
+
+$ objdump -xd ./number
+
+This reveals important information, such as
+
+start address 0x000010e0 //beginning of .text
+__libc_start_main: //Perhaps where main is
+00001000 <.init> //the beginning of init
+
+Which we can use as a breakpoint in a debugger.
+
+Lets run this in a debugger like `gdb(1)` to grasp a better understanding
+
+$ gdb ./number
+
+AT&T syntax sucks, lets use Intel
+
+> set disassembly-flavor intel
+
+Trying to disassemble from main isn't so simple(Since the binary was stripped :/ ).
+
+> disassemble main
+No symbol table is loaded.  Use the "file" command.
+
+However, we do know __libc_start_main exists, so lets set up a breakpoint there.
+
+(gdb) break __libc_start_main
+Breakpoint 1 at 0xb7dfe720: file ../csu/libc-start.c, line 141.
+
+We have to find a better location for the breakpoint. Single stepping into scanf immediately exits...
+
+Its time to whip out the big guns(Ghidra)
+
+
