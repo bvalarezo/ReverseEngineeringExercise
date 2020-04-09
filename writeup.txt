@@ -4,7 +4,7 @@ Bryan Valarezo
 This is a write up reverse engineering the 2 binaries
 -Number
 -Key
-
+================================================================================================================================================================================
 ## Number
 
 After downloading the binary, I ran `file(1)` on it to get relevant information.
@@ -100,7 +100,7 @@ Its time to whip out the big guns 8-) (Ghidra).
 Ghidra is a very powerful tool that upon importing the binary, it found the function that called scanf and printf.
 
 Now, all we need todo is to analyze the function to see what input will invoke the printf.
-
+#######################################################################
 undefined4 FUN_00011251(void)
 
 {
@@ -159,9 +159,9 @@ undefined4 FUN_00011251(void)
   }
   return 0;
 }
-
+#######################################################################
 Below is my simplified version
-
+#######################################################################
 int main(void)
 
 {
@@ -202,7 +202,7 @@ int main(void)
     {
         break;
     }
-    ###############
+    ############### THIS IS NOT CORRECT
     x = input[b]; //b = 0 ,3 ,6 ,9 ,12, 15, 18, 21, 24, 27, 30
     x_int = atoi(&x); //convert str `x` to ascii int ########################
     final_number[c] = (char)x_int;
@@ -224,7 +224,7 @@ int main(void)
   }
   return 0;
 }
-
+#######################################################################
 Now we have a basic idea as to what the function is doing, we can run it with a debugger!
 
 Unfortunately, the decompiler is lying to us. 
@@ -232,6 +232,7 @@ We know for a fact that based on the if statements, the number must being with t
 06
 
 However, this is the most critical part of the code.(I used binary ninja to get this).
+#######################################################################
 000012ef  lea     edx, [ebp-0x5e {var_66}]
 000012f2  mov     eax, dword [ebp-0xc {var_14}]
 000012f5  add     eax, edx {var_66}
@@ -248,18 +249,18 @@ However, this is the most critical part of the code.(I used binary ninja to get 
 00001319  sub     esp, 0xc
 0000131c  lea     eax, [ebp-0x62 {var_6a}]
 0000131f  push    eax {var_6a} {var_80_2}
-00001320  call    atoi ###############################################atoi conversion
+00001320  call    atoi 					//atoi conversion
 00001325  add     esp, 0x10
 00001328  mov     ecx, eax
 0000132a  lea     edx, [ebp-0x1e {var_26}]
 0000132d  mov     eax, dword [ebp-0x10 {var_18}]
 00001330  add     eax, edx {var_26}
-00001332  mov     byte [eax], cl #####################################Only use 1 byte
+00001332  mov     byte [eax], cl 			//Only use 1 byte
 00001334  lea     edx, [ebp-0x1e {var_26}]
 00001337  mov     eax, dword [ebp-0x10 {var_18}]
 0000133a  add     eax, edx {var_26}
 0000133c  movzx   eax, byte [eax]
-0000133f  add     eax, 0x3 ########################################### Add 3
+0000133f  add     eax, 0x3 				// Add 3
 00001342  mov     ecx, eax
 00001344  lea     edx, [ebp-0x1e {var_26}]
 00001347  mov     eax, dword [ebp-0x10 {var_18}]
@@ -267,7 +268,7 @@ However, this is the most critical part of the code.(I used binary ninja to get 
 0000134c  mov     byte [eax], cl
 0000134e  add     dword [ebp-0xc {var_14}], 0x3
 00001352  add     dword [ebp-0x10 {var_18}], 0x1
-
+#######################################################################
 I had to use GDB again to help me analyze what was going on.
 
 I had to constanly check the registers...
@@ -316,19 +317,239 @@ The first number must begin with 06. 67 is 'C' in ascii. Subtract that by 3 and 
 Our input should look like this
 
 064,080,066,048,051,048,066,080,064 //Do you see the pattern? ===>[64, 80, 66, 48, 51, 48, 66, 80, 64]
-C    S   E   3   6   3   E   S   C
 
 Lets input this number...
-bryan@thinkpad-t450s$ ./number
+
+bryan@thinkpad-t450s $ ./number
 Enter the right number: 064080066048051048066080064
 Your number corresponds to CSE363ESC, well done!
 
 We did it!
-
+================================================================================================================================================================================
 ## Key
 
 After downloading the binary, I ran `file(1)`, `string(1)`, `ldd(1)`, and 'objdump(1)` on it to get relevant information.
 
+$ file ./key
+key: ELF 32-bit LSB pie executable, Intel 80386, version 1 (SYSV), dynamically linked, interpreter /lib/ld-linux.so.2, BuildID[sha1]=b53ba5b802cbba7fa58131c3a17c6d923f0eadef, stripped
 
+$ strings ./key
 
+oy/*/szzoy
+.,.,
+Usage: %s <key>
+Hty<wye<uo<
+snny
+h2<_sr{n}hip}husro=
+Knsr{<wye2
+;*2$"
+ 
+$ ldd ./key
+        linux-gate.so.1 (0xf7fd0000)
+        libc.so.6 => /usr/lib32/libc.so.6 (0xf7d90000)
+        /lib/ld-linux.so.2 => /usr/lib/ld-linux.so.2 (0xf7fd1000)
 
+$ objdump -xd ./key
+
+start address 0x000010c0
+//Couldn't find a main function :(
+
+I see a bunch of strings, no symbol table, and libc imports.
+
+Lets run `strace(1)` and `ltrace(1)` to see which of the libc functions and syscalls were being called.
+
+$ strace ./key 4
+$ ltrace ./key 4
+
+Now this tells us alot of whats going on. I see the rand(3) function being called, followed up by strlen(3), calloc(3), and puts(3). It looks like the strings...
+
+Knsr{<wye2
+oy/*/szzoy
+
+are important in deriving the key. 
+
+Lets decompile this in Ghidra and try to understand whats going on.
+
+Looks like Ghidra found the main function again(Awesome!). Here it is.
+#######################################################################
+undefined4 FUN_00011311(int param_1,undefined4 *param_2)
+{
+  undefined4 uVar1;
+  int iVar2;
+  char local_11c [256];
+  char *local_1c;
+  int local_18;
+  int local_14;
+  undefined4 *local_10;
+  
+  local_10 = &param_1;
+  if (param_1 == 2) {
+    strncpy(local_11c,(char *)param_2[1],0x100);
+    local_14 = 0;
+    local_18 = 0;
+    while (local_18 < 0x27a) {
+      iVar2 = rand();
+      local_14 = local_14 + iVar2;
+      local_18 = local_18 + 1;
+    }
+    local_14 = FUN_000112ef(local_14);
+    iVar2 = FUN_0001126a(local_11c);
+    if (iVar2 == 1) {
+      local_1c = (char *)FUN_000111f9(&DAT_0001202c);
+      puts(local_1c);
+    }
+    else {
+      local_1c = (char *)FUN_000111f9("Knsr{<wye2");
+      puts(local_1c);
+    }
+    free(local_1c);
+    uVar1 = 0;
+  }
+  else {
+    printf("Usage: %s <key>\n",*param_2);
+    uVar1 = 1;
+  }
+  return uVar1;
+}
+#######################################################################
+
+Below is my simplified version of it.
+It also came along with some other subroutines, which I simplified below.
+#######################################################################
+int main(int argc,char **argv)
+{
+  int retval;
+  int cmp_retval;
+  char input [256];
+  char *out_message;
+  int b;
+  int a;
+  undefined4 *local_10;
+  
+  local_10 = &argc;
+  if (argc == 2) {
+    strncpy(input,argv[1],0x100);
+    //Nonsense below
+    a = 0;
+    b = 0;
+    while (b < 0x27a) {
+      cmp_retval = rand();
+      a = a + cmp_retval;
+      b = b + 1;
+    }
+    a = add_10(a);
+    //Nonsense above
+    cmp_retval = compare_keys(input);
+    if (cmp_retval == 1) {
+      out_message = (char *)decrypt_xor_x1c(&SUCCESS_MSG); //THE ADDRESS IN MEMORY OF THE SUCCESS MESSAGE
+      puts(out_message);
+    }
+    else {
+      out_message = (char *)decrypt_xor_x1c("Knsr{<wye2"); // Wrong Key.
+      puts(out_message);
+    }
+    free(out_message);
+    retval = 0;
+  }
+  else {
+    printf("Usage: %s <key>\n",*argv);
+    retval = 1;
+  }
+  return retval;
+}
+
+int compare_keys(char *param_1)
+
+{
+  size_t length;
+  int real_key;
+  int retval;
+  uint i;
+  
+  length = strlen(param_1);
+  real_key = decrypt_xor_x1c(&REAL_KEY); //THE ADDRESS IN MEMORY OF THE KEY TO COMPARE TO
+  if (length == 0x10) {
+    i = 0;
+    while (i < 0x10) {
+      if (*(char *)(i + real_key) != param_1[i]) {
+        return 0;
+      }
+      i = i + 1;
+    }
+    retval = 1;
+  }
+  else {
+    retval = 0;
+  }
+  return retval;
+}
+
+void * decrypt_xor_x1c(char *encrypted_input)
+{
+  void *decrypted_input;
+  size_t length;
+  uint i;
+  
+  decrypted_input = calloc(0x100,1);
+  length = strlen(encrypted_input);
+  i = 0;
+  while (i < length) {
+    *(byte *)(i + (int)decrypted_input) = encrypted_input[i] ^ 0x1c; //WEAK DECRYPTION
+    i = i + 1;
+  }
+  return decrypted_input;
+}
+#######################################################################
+After analyzing the decompiled code, I can infer that:
+
+The while loop with rand() does nothing, ignore it.
+The input MUST be 16 in length.
+The input is compared to an encrypted string in memory...
+	During the comparison, the encrypted string gets decrypted, then its a regular strcmp with the decrypted key and the input
+
+There is a decryption routine in the program. However, this is a weak encryption since all it does is XOR the byte with 0x1c
+//    *(byte *)(i + (int)decrypted_input) = encrypted_input[i] ^ 0x1c;
+
+If we take a look at the strings...
+
+oy/*/szzoy
+.,.,
+
+and 
+
+Hty<wye<uo<
+snny
+h2<_sr{n}hip}husro=
+
+They are actually the key and success messages, encrypted.
+
+Since the encryption is so weak, we can decrypt ourselves.
+
+Here is my python script to decrypt the key. I used the hex values of the strings in the binary and just coded them to my script.
+
+#!/usr/bin/env python3 
+
+def decrypt(input):
+    out = []
+    for i in input:
+        out += [0x1c ^ i]
+    return out
+
+encrypted_key_hex = ["7f","6f","79","2f","2a","2f","73","7a","7a","6f","79","7f","2e","2c","2e","2c"]
+encrypted_success_hex = ["48","74","79","3c","77","79","65","3c","75","6f","3c","7f","73","6e","6e","79","7f","68","32","3c","5f","73","72","7b","6e","7d","68","69","70","7d","68","75","73","72","6f","3d"]
+encrypted_key = [int(''.join(c),16) for c in encrypted_key_hex ]
+encrypted_success = [int(''.join(c),16) for c in encrypted_success_hex ]
+key = "".join(chr(c) for c in decrypt(encrypted_key))
+success = "".join(chr(c) for c in decrypt(encrypted_success))
+print(key)
+print(success)
+
+The python script decrypts the key to be...
+cse363offsec2020
+
+Lets try that with the binary...
+
+bryan@thinkpad-t450s $ ./key cse363offsec2020
+The key is correct. Congratulations!
+
+We did it!
